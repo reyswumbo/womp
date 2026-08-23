@@ -63,16 +63,35 @@
                 android:paddingEnd="20dp"
                 android:paddingBottom="16dp">
 
-                <ImageView
-                    android:id="@+id/imgSettingsAvatar"
+                <FrameLayout
                     android:layout_width="72dp"
-                    android:layout_height="72dp"
-                    android:src="@drawable/avatar_placeholder"
-                    android:scaleType="centerCrop"
-                    android:background="@drawable/bg_avatar_circle"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:contentDescription="@string/choose_avatar" />
+                    android:layout_height="72dp">
+
+                    <ImageView
+                        android:id="@+id/imgSettingsAvatar"
+                        android:layout_width="72dp"
+                        android:layout_height="72dp"
+                        android:src="@drawable/avatar_placeholder"
+                        android:scaleType="centerCrop"
+                        android:background="@drawable/bg_avatar_circle"
+                        android:contentDescription="@string/choose_avatar" />
+
+                    <cloud.wumboing.rpchat.ui.GifImageView
+                        android:id="@+id/gifSettingsAvatar"
+                        android:layout_width="72dp"
+                        android:layout_height="72dp"
+                        android:background="@drawable/bg_avatar_circle"
+                        android:visibility="gone" />
+
+                    <View
+                        android:id="@+id/touchSettingsAvatar"
+                        android:layout_width="72dp"
+                        android:layout_height="72dp"
+                        android:background="@drawable/bg_avatar_circle"
+                        android:backgroundTint="#00000000"
+                        android:clickable="true"
+                        android:focusable="true" />
+                </FrameLayout>
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -340,6 +359,64 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:paddingBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="8dp"
+                android:text="@string/custom_shortcut_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="16dp">
+
+                <ImageView
+                    android:id="@+id/imgCustomShortcutIcon"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:src="@drawable/avatar_placeholder"
+                    android:scaleType="centerCrop"
+                    android:background="@drawable/bg_avatar_circle"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <EditText
+                    android:id="@+id/editCustomShortcutName"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:hint="@string/custom_shortcut_name_hint"
+                    android:textColorHint="@color/text_secondary"
+                    android:textColor="@color/text_primary"
+                    android:maxLines="1"
+                    android:background="@drawable/bg_input"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp" />
+
+                <Button
+                    android:id="@+id/btnCreateCustomShortcut"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/create_shortcut_button"
+                    android:textAllCaps="false"
+                    android:textSize="12sp"
+                    android:textColor="@android:color/white"
+                    android:backgroundTint="@color/accent" />
+            </LinearLayout>
 
         </LinearLayout>
     </ScrollView>

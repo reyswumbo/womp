@@ -11,7 +11,8 @@ data class Group(
     var members: MutableList<GroupMember> = mutableListOf(),
     var visible: Boolean = true,
     var pinnedMessageId: String? = null,
-    var draftText: String? = null
+    var draftText: String? = null,
+    var unreadCount: Int = 0
 ) {
     /** Ringkasan nama anggota, dipakai menggantikan bio: "arya, haCkor, akujawa9, faps, dll" */
     fun memberSummary(): String {
@@ -27,6 +28,7 @@ data class Group(
         put("visible", visible)
         put("pinnedMessageId", pinnedMessageId ?: JSONObject.NULL)
         put("draftText", draftText ?: JSONObject.NULL)
+        put("unreadCount", unreadCount)
         val arr = JSONArray()
         members.forEach { arr.put(it.toJson()) }
         put("members", arr)
@@ -46,7 +48,8 @@ data class Group(
                 members = memberList,
                 visible = o.optBoolean("visible", true),
                 pinnedMessageId = if (!o.has("pinnedMessageId") || o.isNull("pinnedMessageId")) null else o.optString("pinnedMessageId"),
-                draftText = if (!o.has("draftText") || o.isNull("draftText")) null else o.optString("draftText")
+                draftText = if (!o.has("draftText") || o.isNull("draftText")) null else o.optString("draftText"),
+                unreadCount = o.optInt("unreadCount", 0)
             )
         }
     }

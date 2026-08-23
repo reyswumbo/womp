@@ -48,7 +48,7 @@ class ChatListFragment : Fragment() {
             timeProvider = { entry -> storage.lastMessageTimestamp(entry.id) },
             draftProvider = { entry -> draftFor(entry) },
             onClick = { entry -> openChat(entry) },
-            onLongClick = { entry -> confirmHide(entry) }
+            onLongClick = { entry -> showChatActionMenu(entry) }
         )
         binding.recyclerCharacters.layoutManager = LinearLayoutManager(context)
         binding.recyclerCharacters.adapter = adapter
@@ -118,6 +118,45 @@ class ChatListFragment : Fragment() {
             .setMessage("Hapus obrolan ini dari daftar? Kontak/grup & riwayat chat tetap tersimpan, bisa dipanggil lagi lewat tombol +.")
             .setPositiveButton(R.string.delete_message) { _, _ ->
                 if (entry.isGroup) storage.hideGroupFromChatList(entry.id) else storage.hideFromChatList(entry.id)
+                refreshList()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showChatActionMenu(entry: ChatEntry) {
+        val options = arrayOf(getString(R.string.delete_message), getString(R.string.mark_unread))
+        AlertDialog.Builder(requireContext())
+            .setTitle(entry.name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> confirmHide(entry)
+                    1 -> showMarkUnreadDialog(entry)
+                }
+            }
+            .show()
+    }
+
+    private fun showMarkUnreadDialog(entry: ChatEntry) {
+        val input = android.widget.EditText(requireContext()).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = getString(R.string.unread_count_hint)
+            setText("1")
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.mark_unread)
+            .setView(input)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val count = input.text.toString().toIntOrNull() ?: 1
+                if (entry.isGroup) {
+                    val group = storage.loadGroups().firstOrNull { it.id == entry.id } ?: return@setPositiveButton
+                    group.unreadCount = count.coerceAtLeast(0)
+                    storage.updateGroup(group)
+                } else {
+                    val character = storage.loadCharacters().firstOrNull { it.id == entry.id } ?: return@setPositiveButton
+                    character.unreadCount = count.coerceAtLeast(0)
+                    storage.updateCharacter(character)
+                }
                 refreshList()
             }
             .setNegativeButton(R.string.cancel, null)

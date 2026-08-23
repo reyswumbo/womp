@@ -2,10 +2,12 @@ package cloud.wumboing.rpchat.ui
 
 import android.graphics.Color
 import android.os.Bundle
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
@@ -35,6 +37,8 @@ class StatisticsFragment : Fragment() {
         0xFF4EA4F6, 0xFF7A2B5A, 0xFF1F6F4A, 0xFF7A4B2B,
         0xFF4A2B78, 0xFF1F6F6F, 0xFF7A2B2B, 0xFF264D73
     ).map { it.toInt() }
+
+    private data class StatCard(val iconRes: Int, val cardColor: Int, val value: String, val labelRes: Int)
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -71,10 +75,10 @@ class StatisticsFragment : Fragment() {
                     if (range == selectedRange) getColorCompat(R.color.accent) else getColorCompat(R.color.bubble_other),
                     18f
                 )
-                val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                params.marginEnd = 6
+                val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                params.marginEnd = 12
                 layoutParams = params
-                setPadding(4, 18, 4, 18)
+                setPadding(28, 18, 28, 18)
                 setOnClickListener {
                     selectedRange = range
                     setupRangeButtons()
@@ -108,25 +112,101 @@ class StatisticsFragment : Fragment() {
         sessions.forEach { s ->
             durationByChat[s.characterId] = (durationByChat[s.characterId] ?: 0L) + s.durationSeconds
         }
-
         val totalSeconds = durationByChat.values.sum()
-        binding.txtTotalTime.text = formatDuration(totalSeconds)
 
         val messages = storage.allMessagesWithCharacterId().filter { it.second.timestamp >= rangeStart }
         val totalWords = messages.sumOf { (_, msg) ->
             msg.text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
         }
-        binding.txtTotalWords.text = totalWords.toString()
+        val photoCount = messages.count { it.second.mediaType == "photo" }
+        val videoCount = messages.count { it.second.mediaType == "video" }
+        val audioCount = messages.count { it.second.mediaType == "audio" }
+        val documentCount = messages.count { it.second.mediaType == "document" }
+        val stickerCount = messages.count { it.second.mediaType == "sticker" }
 
         val longestEntry = durationByChat.entries.maxByOrNull { it.value }
-        if (longestEntry != null && longestEntry.value > 0) {
+        binding.txtLongestContact.text = if (longestEntry != null && longestEntry.value > 0) {
             val name = nameById[longestEntry.key] ?: "-"
-            binding.txtLongestContact.text = "$name — ${formatDuration(longestEntry.value)}"
+            "$name — ${formatDuration(longestEntry.value)}"
         } else {
-            binding.txtLongestContact.text = "-"
+            "-"
         }
 
+        renderStatGrid(
+            listOf(
+                StatCard(R.drawable.ic_clock, 0xFF4EA4F6.toInt(), formatDuration(totalSeconds), R.string.stats_total_time),
+                StatCard(R.drawable.ic_chat_tab, 0xFF7A2B5A.toInt(), messages.size.toString(), R.string.stats_total_messages),
+                StatCard(R.drawable.ic_text, 0xFF1F6F4A.toInt(), totalWords.toString(), R.string.stats_total_words),
+                StatCard(R.drawable.ic_photo, 0xFF7A4B2B.toInt(), photoCount.toString(), R.string.stats_photos_sent),
+                StatCard(R.drawable.ic_video, 0xFF4A2B78.toInt(), videoCount.toString(), R.string.stats_videos_sent),
+                StatCard(R.drawable.ic_audio, 0xFF1F6F6F.toInt(), audioCount.toString(), R.string.stats_audio_sent),
+                StatCard(R.drawable.ic_document, 0xFF7A2B2B.toInt(), documentCount.toString(), R.string.stats_documents_sent),
+                StatCard(R.drawable.ic_sticker, 0xFF264D73.toInt(), stickerCount.toString(), R.string.stats_stickers_sent)
+            )
+        )
+
         renderBarChart(durationByChat, nameById)
+    }
+
+    private fun renderStatGrid(cards: List<StatCard>) {
+        binding.statsGridContainer.removeAllViews()
+        val scale = resources.displayMetrics.density
+        cards.chunked(2).forEach { pair ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                params.bottomMargin = (10 * scale).toInt()
+                layoutParams = params
+            }
+            pair.forEachIndexed { index, card ->
+                row.addView(buildStatCard(card, index == 0))
+            }
+            binding.statsGridContainer.addView(row)
+        }
+    }
+
+    private fun buildStatCard(card: StatCard, isFirstInRow: Boolean): View {
+        val scale = resources.displayMetrics.density
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            background = ThemeUtils.bubbleDrawable(requireContext(), getColorCompat(R.color.bubble_other), 14f)
+            setPadding((14 * scale).toInt(), (14 * scale).toInt(), (14 * scale).toInt(), (14 * scale).toInt())
+            val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            if (isFirstInRow) params.marginEnd = (6 * scale).toInt() else params.marginStart = (6 * scale).toInt()
+            layoutParams = params
+        }
+
+        val iconCircle = LinearLayout(requireContext()).apply {
+            gravity = Gravity.CENTER
+            background = ThemeUtils.bubbleDrawable(requireContext(), card.cardColor, 18f)
+            layoutParams = LinearLayout.LayoutParams((36 * scale).toInt(), (36 * scale).toInt())
+        }
+        val icon = ImageView(requireContext()).apply {
+            setImageResource(card.iconRes)
+            layoutParams = LinearLayout.LayoutParams((20 * scale).toInt(), (20 * scale).toInt())
+        }
+        iconCircle.addView(icon)
+        container.addView(iconCircle)
+
+        val value = TextView(requireContext()).apply {
+            text = card.value
+            setTextColor(getColorCompat(R.color.text_primary))
+            textSize = 20f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            params.topMargin = (10 * scale).toInt()
+            layoutParams = params
+        }
+        container.addView(value)
+
+        val label = TextView(requireContext()).apply {
+            text = getString(card.labelRes)
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 12f
+        }
+        container.addView(label)
+
+        return container
     }
 
     private fun renderBarChart(
@@ -153,7 +233,7 @@ class StatisticsFragment : Fragment() {
 
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
                 val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 params.bottomMargin = (10 * scale).toInt()
                 layoutParams = params

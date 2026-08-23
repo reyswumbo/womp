@@ -49,7 +49,15 @@ class SettingsActivity : AppCompatActivity() {
 
     private val pickAvatarLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri -> if (uri != null) launchCrop(uri) }
+    ) { uri ->
+        if (uri != null) {
+            if (cloud.wumboing.rpchat.util.AvatarPickHelper.isGifUri(this, uri)) {
+                saveGifAvatar(uri)
+            } else {
+                launchCrop(uri)
+            }
+        }
+    }
 
     private val cropLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -58,11 +66,78 @@ class SettingsActivity : AppCompatActivity() {
             val path = result.data?.getStringExtra(CropAvatarActivity.EXTRA_RESULT_PATH)
             if (path != null) {
                 pendingAvatarCroppedPath = path
-                val bmp = BitmapFactory.decodeFile(path)
-                if (bmp != null) binding.imgSettingsAvatar.setImageBitmap(bmp)
                 val profile = storage.loadProfile()
                 profile.avatarPath = copyCroppedToInternal(path, "self_profile")
                 storage.saveProfile(profile)
+                showAvatarPreview(profile.avatarPath)
+            }
+        }
+    }
+
+    private fun saveGifAvatar(uri: Uri) {
+        val outFile = File(storage.avatarsDir, "self_profile.gif")
+        val success = cloud.wumboing.rpchat.util.AvatarPickHelper.saveGifDirectly(contentResolver, uri, outFile)
+        if (success) {
+            pendingAvatarCroppedPath = outFile.absolutePath
+            val profile = storage.loadProfile()
+            profile.avatarPath = outFile.absolutePath
+            storage.saveProfile(profile)
+            showAvatarPreview(profile.avatarPath)
+        }
+    }
+
+    private fun showAvatarPreview(path: String?) {
+        if (cloud.wumboing.rpchat.util.AvatarPickHelper.isGifPath(path)) {
+            binding.imgSettingsAvatar.visibility = View.GONE
+            binding.gifSettingsAvatar.visibility = View.VISIBLE
+            binding.gifSettingsAvatar.setGifFile(path!!)
+        } else {
+            binding.gifSettingsAvatar.visibility = View.GONE
+            binding.gifSettingsAvatar.clear()
+            binding.imgSettingsAvatar.visibility = View.VISIBLE
+            val profile = storage.loadProfile()
+            binding.imgSettingsAvatar.loadAvatarOrInitials(path, profile.name, "self")
+        }
+    }
+
+    private fun showAvatarSourceChooser() {
+        val options = arrayOf(getString(R.string.pick_from_gallery), getString(R.string.paste_giphy_link))
+        AlertDialog.Builder(this)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> pickAvatarLauncher.launch("image/*")
+                    1 -> showGiphyUrlDialog()
+                }
+            }
+            .show()
+    }
+
+    private fun showGiphyUrlDialog() {
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.giphy_url_hint)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.paste_giphy_link)
+            .setView(input)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val url = input.text.toString().trim()
+                if (url.isNotEmpty()) downloadGifAvatarFromUrl(url)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun downloadGifAvatarFromUrl(url: String) {
+        val outFile = File(storage.avatarsDir, "self_profile.gif")
+        android.widget.Toast.makeText(this, R.string.downloading_gif, android.widget.Toast.LENGTH_SHORT).show()
+        cloud.wumboing.rpchat.util.AvatarPickHelper.downloadGifFromUrl(url, outFile) { success ->
+            if (success) {
+                val profile = storage.loadProfile()
+                profile.avatarPath = outFile.absolutePath
+                storage.saveProfile(profile)
+                showAvatarPreview(profile.avatarPath)
+            } else {
+                android.widget.Toast.makeText(this, R.string.gif_download_failed, android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -151,7 +226,9 @@ class SettingsActivity : AppCompatActivity() {
         val profile = storage.loadProfile()
         binding.editSettingsName.setText(profile.name)
         binding.editSettingsBio.setText(profile.bio ?: "")
-        binding.imgSettingsAvatar.loadAvatarOrInitials(profile.avatarPath, profile.name, "self")
+        binding.imgSettingsAvatar.clipToCircle()
+        binding.gifSettingsAvatar.clipToCircle()
+        showAvatarPreview(profile.avatarPath)
 
         if (!liveAvatarWatcherWired) {
             liveAvatarWatcherWired = true
@@ -161,8 +238,8 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        binding.imgSettingsAvatar.setOnClickListener {
-            pickAvatarLauncher.launch("image/*")
+        binding.touchSettingsAvatar.setOnClickListener {
+            showAvatarSourceChooser()
         }
 
         binding.editSettingsName.addTextChangedListener(simpleWatcher {
@@ -447,7 +524,81 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupAppIdentitySection() {
         refreshIdentityRows()
+        setupCustomShortcut()
     }
+
+    // ---------- Shortcut kustom (nama & ikon bebas) ----------
+
+    private var pendingCustomShortcutIcon: android.graphics.Bitmap? = null
+
+    private val pickCustomShortcutIconLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) launchCropForShortcut(uri) }
+
+    private val cropForShortcutLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val path = result.data?.getStringExtra(CropAvatarActivity.EXTRA_RESULT_PATH)
+            if (path != null) {
+                val bmp = BitmapFactory.decodeFile(path)
+                if (bmp != null) {
+                    pendingCustomShortcutIcon = bmp
+                    binding.imgCustomShortcutIcon.setImageBitmap(bmp)
+                }
+            }
+        }
+    }
+
+    private fun launchCropForShortcut(uri: Uri) {
+        val intent = Intent(this, CropAvatarActivity::class.java)
+        intent.putExtra(CropAvatarActivity.EXTRA_IMAGE_URI, uri.toString())
+        cropForShortcutLauncher.launch(intent)
+    }
+
+    private fun setupCustomShortcut() {
+        binding.imgCustomShortcutIcon.clipToCircle()
+        binding.imgCustomShortcutIcon.setOnClickListener {
+            pickCustomShortcutIconLauncher.launch("image/*")
+        }
+        binding.editCustomShortcutName.wireLiveInitialsPreview(binding.imgCustomShortcutIcon, "custom_shortcut") {
+            pendingCustomShortcutIcon != null
+        }
+        binding.btnCreateCustomShortcut.setOnClickListener { createCustomShortcut() }
+    }
+
+    private fun createCustomShortcut() {
+        val name = binding.editCustomShortcutName.text.toString().trim()
+        if (name.isEmpty()) {
+            android.widget.Toast.makeText(this, R.string.custom_shortcut_name_hint, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val icon = pendingCustomShortcutIcon
+            ?: cloud.wumboing.rpchat.util.AvatarUtils.initialsBitmap(name, "custom_shortcut", 192)
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val shortcutManager = getSystemService(android.content.pm.ShortcutManager::class.java)
+            if (shortcutManager != null && shortcutManager.isRequestPinShortcutSupported) {
+                val shortcutIntent = Intent(this, MainActivity::class.java).apply {
+                    action = Intent.ACTION_MAIN
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                }
+                val shortcut = android.content.pm.ShortcutInfo.Builder(this, "custom_${System.currentTimeMillis()}")
+                    .setShortLabel(name)
+                    .setLongLabel(name)
+                    .setIcon(android.graphics.drawable.Icon.createWithBitmap(icon))
+                    .setIntent(shortcutIntent)
+                    .build()
+                shortcutManager.requestPinShortcut(shortcut, null)
+                android.widget.Toast.makeText(this, R.string.custom_shortcut_created, android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                android.widget.Toast.makeText(this, R.string.custom_shortcut_not_supported, android.widget.Toast.LENGTH_LONG).show()
+            }
+        } else {
+            android.widget.Toast.makeText(this, R.string.custom_shortcut_not_supported, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
 
     private fun refreshIdentityRows() {
         binding.identityContainer.removeAllViews()

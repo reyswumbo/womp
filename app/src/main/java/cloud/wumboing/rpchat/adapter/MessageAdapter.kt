@@ -119,6 +119,7 @@ class MessageAdapter(
             timeText
         }
         b.txtTime.text = if (isPinned) "📌 $timeLabel" else timeLabel
+        b.imgReadReceipt.visibility = if (message.isSelf && !message.isNarrator) View.VISIBLE else View.GONE
 
         val rowParams = b.contentRow.layoutParams as? android.widget.LinearLayout.LayoutParams
 

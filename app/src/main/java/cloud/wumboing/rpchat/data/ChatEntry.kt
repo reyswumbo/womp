@@ -9,7 +9,8 @@ data class ChatEntry(
     val name: String,
     val avatarPath: String?,
     val isGroup: Boolean,
-    val fallbackPreview: String
+    val fallbackPreview: String,
+    val unreadCount: Int
 ) {
     companion object {
         fun from(character: Character): ChatEntry = ChatEntry(
@@ -17,7 +18,8 @@ data class ChatEntry(
             name = character.name,
             avatarPath = character.avatarPath,
             isGroup = false,
-            fallbackPreview = character.bio ?: ""
+            fallbackPreview = character.bio ?: "",
+            unreadCount = character.unreadCount
         )
 
         fun from(group: Group): ChatEntry = ChatEntry(
@@ -25,7 +27,8 @@ data class ChatEntry(
             name = group.name,
             avatarPath = group.avatarPath,
             isGroup = true,
-            fallbackPreview = group.memberSummary()
+            fallbackPreview = group.memberSummary(),
+            unreadCount = group.unreadCount
         )
     }
 }

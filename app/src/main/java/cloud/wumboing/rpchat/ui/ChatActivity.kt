@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -28,6 +29,8 @@ import cloud.wumboing.rpchat.data.Message
 import cloud.wumboing.rpchat.data.Storage
 import cloud.wumboing.rpchat.databinding.ActivityChatBinding
 import cloud.wumboing.rpchat.databinding.DialogAddCharacterBinding
+import cloud.wumboing.rpchat.databinding.DialogStickerPickerBinding
+import cloud.wumboing.rpchat.adapter.StickerAdapter
 import cloud.wumboing.rpchat.util.BitmapUtils
 import cloud.wumboing.rpchat.util.clipToCircle
 import cloud.wumboing.rpchat.util.loadAvatarOrInitials
@@ -61,7 +64,20 @@ class ChatActivity : AppCompatActivity() {
 
     private val pickAvatarLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri -> if (uri != null) launchCrop(uri) }
+    ) { uri ->
+        if (uri != null) {
+            if (cloud.wumboing.rpchat.util.AvatarPickHelper.isGifUri(this, uri)) {
+                val outFile = File(storage.avatarsDir, "char_gif_${UUID.randomUUID()}.gif")
+                if (cloud.wumboing.rpchat.util.AvatarPickHelper.saveGifDirectly(contentResolver, uri, outFile)) {
+                    pendingAvatarCroppedPath = outFile.absolutePath
+                    val bmp = BitmapFactory.decodeFile(outFile.absolutePath)
+                    if (bmp != null) editDialogBinding?.imgAvatarPreview?.setImageBitmap(bmp)
+                }
+            } else {
+                launchCrop(uri)
+            }
+        }
+    }
 
     private val cropLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -163,60 +179,46 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun showStickerPicker() {
-        val stickers = storage.loadStickers()
+        val stickers = storage.loadStickers().toMutableList()
         if (stickers.isEmpty()) {
             pickStickerLauncher.launch("image/*")
             return
         }
-        val scale = resources.displayMetrics.density
-        val tileSize = (72 * scale).toInt()
-        val grid = GridLayout(this).apply {
-            columnCount = 4
-            setPadding(16, 16, 16, 16)
-        }
-        var dialogRef: AlertDialog? = null
 
-        stickers.forEach { file ->
-            val iv = android.widget.ImageView(this).apply {
-                val bmp = BitmapUtils.decodeSampledFromFile(file.absolutePath, 300)
-                if (bmp != null) setImageBitmap(bmp)
-                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                layoutParams = GridLayout.LayoutParams().apply {
-                    width = tileSize
-                    height = tileSize
-                    setMargins(8, 8, 8, 8)
-                }
-                setOnClickListener {
-                    sendSticker(file.absolutePath)
-                    dialogRef?.dismiss()
-                }
-            }
-            grid.addView(iv)
+        val sheetBinding = DialogStickerPickerBinding.inflate(layoutInflater)
+        val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        dialog.setContentView(sheetBinding.root)
+
+        sheetBinding.txtNoStickers.visibility = if (stickers.isEmpty()) View.VISIBLE else View.GONE
+        sheetBinding.recyclerStickers.layoutManager = GridLayoutManager(this, 4)
+        sheetBinding.recyclerStickers.adapter = StickerAdapter(
+            items = stickers,
+            onClick = { file ->
+                sendSticker(file.absolutePath)
+                dialog.dismiss()
+            },
+            onLongClick = { file -> confirmDeleteSticker(file, sheetBinding) }
+        )
+
+        sheetBinding.btnAddSticker.setOnClickListener {
+            pickStickerLauncher.launch("image/*")
+            dialog.dismiss()
         }
 
-        val addTile = TextView(this).apply {
-            text = "+"
-            textSize = 28f
-            gravity = Gravity.CENTER
-            setTextColor(resources.getColor(R.color.text_secondary, theme))
-            background = cloud.wumboing.rpchat.util.ThemeUtils.bubbleDrawable(
-                this@ChatActivity, resources.getColor(R.color.bubble_other, theme), 12f
-            )
-            layoutParams = GridLayout.LayoutParams().apply {
-                width = tileSize
-                height = tileSize
-                setMargins(8, 8, 8, 8)
-            }
-            setOnClickListener {
-                pickStickerLauncher.launch("image/*")
-                dialogRef?.dismiss()
-            }
-        }
-        grid.addView(addTile)
+        dialog.show()
+    }
 
-        val scrollView = android.widget.ScrollView(this).apply { addView(grid) }
-        dialogRef = AlertDialog.Builder(this)
-            .setView(scrollView)
+    private fun confirmDeleteSticker(file: File, sheetBinding: DialogStickerPickerBinding) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.delete_sticker)
+            .setMessage(R.string.delete_sticker_confirm)
+            .setPositiveButton(R.string.delete_message) { _, _ ->
+                file.delete()
+                val remaining = storage.loadStickers().toMutableList()
+                (sheetBinding.recyclerStickers.adapter as? StickerAdapter)?.update(remaining)
+                sheetBinding.txtNoStickers.visibility = if (remaining.isEmpty()) View.VISIBLE else View.GONE
+            }
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -229,6 +231,7 @@ class ChatActivity : AppCompatActivity() {
         } catch (e: Exception) {
             // abaikan jika gagal
         }
+        showStickerPicker()
     }
 
     private fun sendSticker(path: String) {
@@ -260,6 +263,10 @@ class ChatActivity : AppCompatActivity() {
         applyChatBackground()
         adapter.refreshAvatars()
         sessionStartTime = System.currentTimeMillis()
+        if (character.unreadCount > 0) {
+            character.unreadCount = 0
+            storage.updateCharacter(character)
+        }
     }
 
     override fun onPause() {
@@ -354,7 +361,8 @@ class ChatActivity : AppCompatActivity() {
 
     private fun copyCroppedToInternal(tempPath: String, key: String): String? {
         return try {
-            val outFile = File(storage.avatarsDir, "$key.jpg")
+            val ext = if (tempPath.endsWith(".gif", ignoreCase = true)) "gif" else "jpg"
+            val outFile = File(storage.avatarsDir, "$key.$ext")
             File(tempPath).copyTo(outFile, overwrite = true)
             outFile.absolutePath
         } catch (e: Exception) {

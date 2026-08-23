@@ -33,7 +33,20 @@ class NewChatActivity : AppCompatActivity() {
 
     private val pickAvatarLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri -> if (uri != null) launchCrop(uri) }
+    ) { uri ->
+        if (uri != null) {
+            if (cloud.wumboing.rpchat.util.AvatarPickHelper.isGifUri(this, uri)) {
+                val outFile = File(storage.avatarsDir, "char_gif_${java.util.UUID.randomUUID()}.gif")
+                if (cloud.wumboing.rpchat.util.AvatarPickHelper.saveGifDirectly(contentResolver, uri, outFile)) {
+                    pendingAvatarCroppedPath = outFile.absolutePath
+                    val bmp = BitmapFactory.decodeFile(outFile.absolutePath)
+                    if (bmp != null) dialogBinding?.imgAvatarPreview?.setImageBitmap(bmp)
+                }
+            } else {
+                launchCrop(uri)
+            }
+        }
+    }
 
     private val cropLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -167,7 +180,8 @@ class NewChatActivity : AppCompatActivity() {
 
     private fun copyCroppedToInternal(tempPath: String, key: String): String? {
         return try {
-            val outFile = File(storage.avatarsDir, "$key.jpg")
+            val ext = if (tempPath.endsWith(".gif", ignoreCase = true)) "gif" else "jpg"
+            val outFile = File(storage.avatarsDir, "$key.$ext")
             File(tempPath).copyTo(outFile, overwrite = true)
             outFile.absolutePath
         } catch (e: Exception) {

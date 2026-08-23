@@ -1,6 +1,7 @@
 package cloud.wumboing.rpchat.adapter
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import cloud.wumboing.rpchat.data.ChatEntry
@@ -39,6 +40,13 @@ class CharacterAdapter(
 
         val timestamp = timeProvider(entry)
         holder.binding.txtTime.text = if (timestamp != null) ChatDateUtils.formatChatTime(timestamp) else ""
+
+        if (entry.unreadCount > 0) {
+            holder.binding.txtUnreadBadge.visibility = View.VISIBLE
+            holder.binding.txtUnreadBadge.text = if (entry.unreadCount > 99) "99+" else entry.unreadCount.toString()
+        } else {
+            holder.binding.txtUnreadBadge.visibility = View.GONE
+        }
 
         holder.binding.imgAvatar.loadAvatarOrInitials(entry.avatarPath, entry.name, entry.id)
 

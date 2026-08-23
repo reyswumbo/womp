@@ -40,11 +40,38 @@ class CreateGroupActivity : AppCompatActivity() {
 
     private val pickGroupAvatarLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri -> if (uri != null) launchCrop(uri, forMember = false) }
+    ) { uri ->
+        if (uri != null) {
+            if (cloud.wumboing.rpchat.util.AvatarPickHelper.isGifUri(this, uri)) {
+                val outFile = File(storage.avatarsDir, "group_gif_${UUID.randomUUID()}.gif")
+                if (cloud.wumboing.rpchat.util.AvatarPickHelper.saveGifDirectly(contentResolver, uri, outFile)) {
+                    pendingGroupAvatarPath = outFile.absolutePath
+                    val bmp = BitmapFactory.decodeFile(outFile.absolutePath)
+                    if (bmp != null) binding.imgGroupAvatar.setImageBitmap(bmp)
+                }
+            } else {
+                launchCrop(uri, forMember = false)
+            }
+        }
+    }
 
     private val pickMemberAvatarLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri -> if (uri != null) launchCrop(uri, forMember = true) }
+    ) { uri ->
+        if (uri != null) {
+            val member = pendingMemberDraft
+            if (member != null && cloud.wumboing.rpchat.util.AvatarPickHelper.isGifUri(this, uri)) {
+                val outFile = File(storage.avatarsDir, "member_gif_${UUID.randomUUID()}.gif")
+                if (cloud.wumboing.rpchat.util.AvatarPickHelper.saveGifDirectly(contentResolver, uri, outFile)) {
+                    member.avatarPath = outFile.absolutePath
+                    val bmp = BitmapFactory.decodeFile(outFile.absolutePath)
+                    if (bmp != null) member.binding.imgMemberAvatar.setImageBitmap(bmp)
+                }
+            } else {
+                launchCrop(uri, forMember = true)
+            }
+        }
+    }
 
     private val cropLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -193,7 +220,8 @@ class CreateGroupActivity : AppCompatActivity() {
 
     private fun copyCroppedToInternal(tempPath: String, key: String): String? {
         return try {
-            val outFile = File(storage.avatarsDir, "$key.jpg")
+            val ext = if (tempPath.endsWith(".gif", ignoreCase = true)) "gif" else "jpg"
+            val outFile = File(storage.avatarsDir, "$key.$ext")
             File(tempPath).copyTo(outFile, overwrite = true)
             outFile.absolutePath
         } catch (e: Exception) {

@@ -13,7 +13,8 @@ data class Character(
     var pinnedMessageId: String? = null,
     var draftText: String? = null,
     var username: String? = null,
-    var statusPhotos: MutableList<String> = mutableListOf()
+    var statusPhotos: MutableList<String> = mutableListOf(),
+    var unreadCount: Int = 0
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -25,6 +26,7 @@ data class Character(
         put("draftText", draftText ?: JSONObject.NULL)
         put("username", username ?: JSONObject.NULL)
         put("statusPhotos", JSONArray(statusPhotos))
+        put("unreadCount", unreadCount)
     }
 
     companion object {
@@ -43,7 +45,8 @@ data class Character(
                 pinnedMessageId = if (!o.has("pinnedMessageId") || o.isNull("pinnedMessageId")) null else o.optString("pinnedMessageId"),
                 draftText = if (!o.has("draftText") || o.isNull("draftText")) null else o.optString("draftText"),
                 username = if (!o.has("username") || o.isNull("username")) null else o.optString("username"),
-                statusPhotos = statusList
+                statusPhotos = statusList,
+                unreadCount = o.optInt("unreadCount", 0)
             )
         }
     }
