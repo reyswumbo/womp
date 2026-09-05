@@ -190,7 +190,7 @@ class Storage(context: Context) {
     fun lastMessagePreview(characterId: String): String? {
         val messages = loadMessages(characterId)
         val last = messages.lastOrNull() ?: return null
-        return when (last.mediaType) {
+        val body = when (last.mediaType) {
             "photo" -> "📷 Foto"
             "video" -> "🎬 Video"
             "audio" -> "🎵 Audio"
@@ -198,6 +198,13 @@ class Storage(context: Context) {
             "sticker" -> "🖼️ Stiker"
             else -> last.text
         }
+        if (last.isSelf || last.isNarrator) return body
+        // Pesan dari lawan bicara: tampilkan nama pengirimnya di depan preview,
+        // seperti "Nama: isi pesan". Untuk chat grup nama diambil dari senderName
+        // pesan itu sendiri; untuk chat 1v1 diambil dari data karakternya.
+        val senderLabel = last.senderName
+            ?: loadCharacters().firstOrNull { it.id == characterId }?.name
+        return if (!senderLabel.isNullOrEmpty()) "$senderLabel: $body" else body
     }
 
     fun lastMessageTimestamp(characterId: String): Long? {

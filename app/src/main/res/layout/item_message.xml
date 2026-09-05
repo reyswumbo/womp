@@ -170,6 +170,45 @@
                         android:textSize="13sp" />
                 </LinearLayout>
 
+                <LinearLayout
+                    android:id="@+id/voiceRow"
+                    android:layout_width="190dp"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingBottom="4dp"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/btnVoicePlayPause"
+                        android:layout_width="34dp"
+                        android:layout_height="34dp"
+                        android:padding="7dp"
+                        android:src="@drawable/ic_play"
+                        android:background="@drawable/bg_avatar_circle"
+                        android:backgroundTint="#33000000"
+                        android:clickable="true"
+                        android:focusable="true" />
+
+                    <SeekBar
+                        android:id="@+id/seekVoice"
+                        style="@android:style/Widget.Material.SeekBar"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:layout_marginEnd="6dp"
+                        android:maxHeight="3dp" />
+
+                    <TextView
+                        android:id="@+id/txtVoiceDuration"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minWidth="34dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
                 <TextView
                     android:id="@+id/txtMessage"
                     android:layout_width="wrap_content"

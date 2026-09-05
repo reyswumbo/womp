@@ -439,7 +439,7 @@ class ChatActivity : AppCompatActivity() {
         val path = message.mediaPath ?: return
         if (!File(path).exists()) return
         when (message.mediaType) {
-            "photo", "video", "audio" -> {
+            "photo", "video" -> {
                 val intent = Intent(this, MediaViewerActivity::class.java).apply {
                     putExtra(MediaViewerActivity.EXTRA_PATH, path)
                     putExtra(MediaViewerActivity.EXTRA_TYPE, message.mediaType)
@@ -512,6 +512,7 @@ class ChatActivity : AppCompatActivity() {
         val options = arrayOf(
             getString(R.string.delete_message),
             getString(R.string.edit_text),
+            getString(R.string.edit_timestamp),
             getString(R.string.give_reaction),
             pinLabel
         )
@@ -520,8 +521,9 @@ class ChatActivity : AppCompatActivity() {
                 when (which) {
                     0 -> deleteMessage(message)
                     1 -> editMessageText(message)
-                    2 -> showReactionPicker(message)
-                    3 -> if (isPinned) unpinMessage() else pinMessage(message)
+                    2 -> editMessageTimestamp(message)
+                    3 -> showReactionPicker(message)
+                    4 -> if (isPinned) unpinMessage() else pinMessage(message)
                 }
             }
             .show()
@@ -610,6 +612,45 @@ class ChatActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun editMessageTimestamp(message: Message) {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = message.timestamp }
+        android.app.DatePickerDialog(
+            this,
+            { _, year, month, day ->
+                cal.set(java.util.Calendar.YEAR, year)
+                cal.set(java.util.Calendar.MONTH, month)
+                cal.set(java.util.Calendar.DAY_OF_MONTH, day)
+                android.app.TimePickerDialog(
+                    this,
+                    { _, hour, minute ->
+                        cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
+                        cal.set(java.util.Calendar.MINUTE, minute)
+                        cal.set(java.util.Calendar.SECOND, 0)
+                        applyMessageTimestamp(message, cal.timeInMillis)
+                    },
+                    cal.get(java.util.Calendar.HOUR_OF_DAY),
+                    cal.get(java.util.Calendar.MINUTE),
+                    true
+                ).show()
+            },
+            cal.get(java.util.Calendar.YEAR),
+            cal.get(java.util.Calendar.MONTH),
+            cal.get(java.util.Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    private fun applyMessageTimestamp(message: Message, newTimestamp: Long) {
+        val messages = storage.loadMessages(character.id)
+        val idx = messages.indexOfFirst { it.id == message.id }
+        if (idx < 0) return
+        val updated = messages[idx].copy(timestamp = newTimestamp)
+        messages[idx] = updated
+        // Urutkan ulang berdasarkan waktu supaya pesan pindah ke posisi kronologis barunya
+        messages.sortBy { it.timestamp }
+        storage.saveMessages(character.id, messages)
+        adapter.submit(messages)
     }
 
     private fun showReactionPicker(message: Message) {

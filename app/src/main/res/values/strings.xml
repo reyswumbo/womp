@@ -21,6 +21,7 @@
     <string name="profile_name_hint">Nama kamu</string>
     <string name="delete_message">Hapus</string>
     <string name="edit_text">Edit teks</string>
+    <string name="edit_timestamp">Edit waktu pesan</string>
     <string name="give_reaction">Beri reaksi</string>
     <string name="edited_label">diedit</string>
     <string name="edit_message_hint">Ubah pesan</string>
@@ -31,6 +32,12 @@
     <string name="attach_audio">Audio</string>
     <string name="attach_document">Dokumen</string>
     <string name="remove_attachment">Hapus lampiran</string>
+    <string name="voice_playback_channel">Pemutaran pesan suara</string>
+    <string name="voice_message_playing">Pesan suara</string>
+    <string name="voice_playing">Sedang diputar</string>
+    <string name="voice_paused">Dijeda</string>
+    <string name="action_play">Putar</string>
+    <string name="action_pause">Jeda</string>
     <string name="emoji">Emoji</string>
     <string name="settings">Pengaturan</string>
     <string name="settings_profile_section">Profil</string>

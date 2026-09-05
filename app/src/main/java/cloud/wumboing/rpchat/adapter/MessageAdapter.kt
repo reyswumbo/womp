@@ -1,12 +1,15 @@
 package cloud.wumboing.rpchat.adapter
 
+import android.media.MediaMetadataRetriever
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.SeekBar
 import androidx.recyclerview.widget.RecyclerView
 import cloud.wumboing.rpchat.R
+import cloud.wumboing.rpchat.audio.VoicePlayerService
 import cloud.wumboing.rpchat.data.AppSettings
 import cloud.wumboing.rpchat.data.Message
 import cloud.wumboing.rpchat.databinding.ItemDateSeparatorBinding
@@ -48,6 +51,79 @@ class MessageAdapter(
     private var rows: List<ChatRow> = buildRows(items)
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
+    // ---------- Pesan suara (voice message) ----------
+    private val audioDurationCache = mutableMapOf<String, Int>()
+    private val voiceHolders = mutableMapOf<String, MsgVH>()
+    private var lastActiveVoiceMessageId: String? = null
+
+    private val voiceStateListener: (VoicePlayerService.State) -> Unit = { state ->
+        applyVoiceState(state)
+    }
+
+    private fun applyVoiceState(state: VoicePlayerService.State) {
+        // Reset tampilan bubble yang sebelumnya aktif kalau pesan yang diputar sudah berganti
+        val previousId = lastActiveVoiceMessageId
+        if (previousId != null && previousId != state.messageId) {
+            voiceHolders[previousId]?.let { holder ->
+                holder.binding.btnVoicePlayPause.setImageResource(R.drawable.ic_play)
+                holder.binding.seekVoice.progress = 0
+                val dur = audioDurationCache[previousId] ?: 0
+                holder.binding.txtVoiceDuration.text = formatDuration(dur)
+            }
+        }
+        lastActiveVoiceMessageId = state.messageId
+
+        val holder = voiceHolders[state.messageId] ?: return
+        holder.binding.btnVoicePlayPause.setImageResource(
+            if (state.isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+        )
+        if (state.durationMs > 0) {
+            holder.binding.seekVoice.max = state.durationMs
+        }
+        holder.binding.seekVoice.progress = state.positionMs
+        val remaining = if (state.isPlaying || state.positionMs > 0) state.positionMs else state.durationMs
+        holder.binding.txtVoiceDuration.text = formatDuration(remaining)
+    }
+
+    private fun formatDuration(ms: Int): String {
+        val totalSeconds = ms / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+    }
+
+    private fun durationFor(messageId: String, path: String): Int {
+        audioDurationCache[messageId]?.let { return it }
+        val retriever = MediaMetadataRetriever()
+        val duration = try {
+            retriever.setDataSource(path)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
+        } catch (e: Exception) {
+            0
+        } finally {
+            try { retriever.release() } catch (e: Exception) { /* abaikan */ }
+        }
+        audioDurationCache[messageId] = duration
+        return duration
+    }
+
+    override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+        super.onAttachedToRecyclerView(recyclerView)
+        VoicePlayerService.addListener(voiceStateListener)
+    }
+
+    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView)
+        VoicePlayerService.removeListener(voiceStateListener)
+    }
+
+    override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+        super.onViewRecycled(holder)
+        if (holder is MsgVH) {
+            voiceHolders.entries.removeAll { it.value == holder }
+        }
+    }
+
     private fun buildRows(messages: List<Message>): List<ChatRow> {
         val result = mutableListOf<ChatRow>()
         var lastDay: String? = null
@@ -84,11 +160,12 @@ class MessageAdapter(
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val row = rows[position]) {
             is ChatRow.DateRow -> (holder as DateVH).binding.txtDateLabel.text = row.label
-            is ChatRow.MsgRow -> bindMessage((holder as MsgVH).binding, row.message, position)
+            is ChatRow.MsgRow -> bindMessage(holder as MsgVH, row.message, position)
         }
     }
 
-    private fun bindMessage(b: ItemMessageBinding, message: Message, position: Int) {
+    private fun bindMessage(holder: MsgVH, message: Message, position: Int) {
+        val b = holder.binding
         val settings = settingsProvider()
         val isPinned = message.id == pinnedIdProvider()
 
@@ -175,6 +252,8 @@ class MessageAdapter(
         b.photoFrame.visibility = View.GONE
         b.imgPlayOverlay.visibility = View.GONE
         b.mediaFileRow.visibility = View.GONE
+        b.voiceRow.visibility = View.GONE
+        voiceHolders.entries.removeAll { it.value.binding == b }
         if (!message.mediaPath.isNullOrEmpty()) {
             when (message.mediaType) {
                 "photo" -> {
@@ -196,11 +275,10 @@ class MessageAdapter(
                         b.txtMediaName.text = File(message.mediaPath!!).name
                     }
                 }
-                "audio", "document" -> {
+                "audio" -> bindVoiceMessage(holder, message)
+                "document" -> {
                     b.mediaFileRow.visibility = View.VISIBLE
-                    b.imgMediaIcon.setImageResource(
-                        if (message.mediaType == "audio") R.drawable.ic_audio else R.drawable.ic_document
-                    )
+                    b.imgMediaIcon.setImageResource(R.drawable.ic_document)
                     b.txtMediaName.text = File(message.mediaPath!!).name
                 }
                 "sticker" -> {
@@ -226,13 +304,55 @@ class MessageAdapter(
         }
 
         b.contentRow.setOnClickListener {
-            if (!message.mediaPath.isNullOrEmpty()) onMediaClick(message)
+            if (!message.mediaPath.isNullOrEmpty() && message.mediaType != "audio") onMediaClick(message)
         }
 
         b.contentRow.setOnLongClickListener {
             onLongPress(message)
             true
         }
+    }
+
+    private fun bindVoiceMessage(holder: MsgVH, message: Message) {
+        val b = holder.binding
+        val path = message.mediaPath ?: return
+        b.voiceRow.visibility = View.VISIBLE
+        voiceHolders[message.id] = holder
+
+        val duration = durationFor(message.id, path)
+        val state = VoicePlayerService.state
+        val isActive = state.messageId == message.id
+
+        b.seekVoice.max = if (isActive && state.durationMs > 0) state.durationMs else duration
+        b.seekVoice.progress = if (isActive) state.positionMs else 0
+        b.btnVoicePlayPause.setImageResource(
+            if (isActive && state.isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+        )
+        val timeToShow = if (isActive) state.positionMs else duration
+        b.txtVoiceDuration.text = formatDuration(timeToShow)
+
+        val togglePlayback = View.OnClickListener {
+            VoicePlayerService.playOrToggle(b.root.context, message.id, path)
+        }
+        b.btnVoicePlayPause.setOnClickListener(togglePlayback)
+        b.voiceRow.setOnClickListener(togglePlayback)
+
+        b.seekVoice.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser && VoicePlayerService.state.messageId == message.id) {
+                    b.txtVoiceDuration.text = formatDuration(progress)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val progress = seekBar?.progress ?: return
+                if (VoicePlayerService.state.messageId == message.id) {
+                    VoicePlayerService.seekTo(b.root.context, progress)
+                } else {
+                    seekBar.progress = 0
+                }
+            }
+        })
     }
 
     override fun getItemCount() = rows.size
