@@ -6,7 +6,6 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.SeekBar
 import androidx.recyclerview.widget.RecyclerView
 import cloud.wumboing.rpchat.R
 import cloud.wumboing.rpchat.audio.VoicePlayerService
@@ -53,6 +52,7 @@ class MessageAdapter(
 
     // ---------- Pesan suara (voice message) ----------
     private val audioDurationCache = mutableMapOf<String, Int>()
+    private val waveformCache = mutableMapOf<String, FloatArray>()
     private val voiceHolders = mutableMapOf<String, MsgVH>()
     private var lastActiveVoiceMessageId: String? = null
 
@@ -66,7 +66,7 @@ class MessageAdapter(
         if (previousId != null && previousId != state.messageId) {
             voiceHolders[previousId]?.let { holder ->
                 holder.binding.btnVoicePlayPause.setImageResource(R.drawable.ic_play)
-                holder.binding.seekVoice.progress = 0
+                holder.binding.waveformVoice.setProgress(0f)
                 val dur = audioDurationCache[previousId] ?: 0
                 holder.binding.txtVoiceDuration.text = formatDuration(dur)
             }
@@ -77,12 +77,11 @@ class MessageAdapter(
         holder.binding.btnVoicePlayPause.setImageResource(
             if (state.isPlaying) R.drawable.ic_pause else R.drawable.ic_play
         )
-        if (state.durationMs > 0) {
-            holder.binding.seekVoice.max = state.durationMs
-        }
-        holder.binding.seekVoice.progress = state.positionMs
-        val remaining = if (state.isPlaying || state.positionMs > 0) state.positionMs else state.durationMs
-        holder.binding.txtVoiceDuration.text = formatDuration(remaining)
+        val duration = if (state.durationMs > 0) state.durationMs else (audioDurationCache[state.messageId] ?: 0)
+        val fraction = if (duration > 0) state.positionMs.toFloat() / duration.toFloat() else 0f
+        holder.binding.waveformVoice.setProgress(fraction)
+        val timeToShow = if (state.isPlaying || state.positionMs > 0) state.positionMs else duration
+        holder.binding.txtVoiceDuration.text = formatDuration(timeToShow)
     }
 
     private fun formatDuration(ms: Int): String {
@@ -105,6 +104,25 @@ class MessageAdapter(
         }
         audioDurationCache[messageId] = duration
         return duration
+    }
+
+    /**
+     * Bentuk batang waveform dibuat deterministik dari id pesan (bukan analisis audio asli,
+     * cukup untuk tampilan visualizer) supaya tiap pesan suara punya pola yang beda tapi
+     * konsisten setiap kali di-render ulang.
+     */
+    private fun waveformFor(messageId: String): FloatArray {
+        waveformCache[messageId]?.let { return it }
+        val random = java.util.Random(messageId.hashCode().toLong())
+        val barCount = 34
+        val values = FloatArray(barCount) { i ->
+            val base = 0.25f + random.nextFloat() * 0.75f
+            // Sedikit dorongan di tengah biar bentuknya tidak terlalu datar/acak
+            val curve = 1f - (kotlin.math.abs(i - barCount / 2f) / (barCount / 2f)) * 0.3f
+            (base * curve).coerceIn(0.15f, 1f)
+        }
+        waveformCache[messageId] = values
+        return values
     }
 
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
@@ -216,9 +234,10 @@ class MessageAdapter(
         }
         b.contentRow.layoutParams = rowParams
 
-        // Nama pengirim di bubble (khusus chat grup): tampil hanya saat ganti pengirim,
-        // sembunyi kalau pesan sebelumnya masih dari pengirim yang sama.
-        val showSenderName = !message.isSelf && message.senderId != null && run {
+        // Nama pengirim di bubble: tampil hanya saat ganti pengirim (mengikuti pesan dari diri sendiri,
+        // atau ganti anggota di chat grup), sembunyi kalau pesan sebelumnya masih dari pengirim yang sama.
+        // Di chat 1v1, namanya diambil dari otherNameProvider() karena senderId/senderName tidak diisi.
+        val showSenderName = !message.isSelf && run {
             val prevRow = if (position > 0) rows.getOrNull(position - 1) else null
             when (prevRow) {
                 null -> true
@@ -228,7 +247,7 @@ class MessageAdapter(
         }
         if (showSenderName) {
             b.txtSenderName.visibility = View.VISIBLE
-            b.txtSenderName.text = message.senderName ?: ""
+            b.txtSenderName.text = message.senderName ?: otherNameProvider()
             b.txtSenderName.setTextColor(AvatarUtils.colorFor(message.senderId ?: otherSeed))
         } else {
             b.txtSenderName.visibility = View.GONE
@@ -320,11 +339,18 @@ class MessageAdapter(
         voiceHolders[message.id] = holder
 
         val duration = durationFor(message.id, path)
+        val amplitudes = waveformFor(message.id)
         val state = VoicePlayerService.state
         val isActive = state.messageId == message.id
 
-        b.seekVoice.max = if (isActive && state.durationMs > 0) state.durationMs else duration
-        b.seekVoice.progress = if (isActive) state.positionMs else 0
+        val playedColor = androidx.core.content.ContextCompat.getColor(b.root.context, R.color.accent)
+        val unplayedColor = androidx.core.content.ContextCompat.getColor(b.root.context, R.color.text_secondary)
+        b.waveformVoice.setColors(played = playedColor, unplayed = unplayedColor)
+        b.waveformVoice.setAmplitudes(amplitudes)
+
+        val activeDuration = if (isActive && state.durationMs > 0) state.durationMs else duration
+        val progressFraction = if (isActive && activeDuration > 0) state.positionMs.toFloat() / activeDuration.toFloat() else 0f
+        b.waveformVoice.setProgress(progressFraction)
         b.btnVoicePlayPause.setImageResource(
             if (isActive && state.isPlaying) R.drawable.ic_pause else R.drawable.ic_play
         )
@@ -335,24 +361,16 @@ class MessageAdapter(
             VoicePlayerService.playOrToggle(b.root.context, message.id, path)
         }
         b.btnVoicePlayPause.setOnClickListener(togglePlayback)
-        b.voiceRow.setOnClickListener(togglePlayback)
 
-        b.seekVoice.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser && VoicePlayerService.state.messageId == message.id) {
-                    b.txtVoiceDuration.text = formatDuration(progress)
-                }
+        b.waveformVoice.setOnSeekListener { fraction ->
+            val current = VoicePlayerService.state
+            if (current.messageId == message.id) {
+                val target = (fraction * (if (current.durationMs > 0) current.durationMs else duration)).toInt()
+                VoicePlayerService.seekTo(b.root.context, target)
+            } else {
+                VoicePlayerService.playOrToggle(b.root.context, message.id, path)
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                val progress = seekBar?.progress ?: return
-                if (VoicePlayerService.state.messageId == message.id) {
-                    VoicePlayerService.seekTo(b.root.context, progress)
-                } else {
-                    seekBar.progress = 0
-                }
-            }
-        })
+        }
     }
 
     override fun getItemCount() = rows.size
